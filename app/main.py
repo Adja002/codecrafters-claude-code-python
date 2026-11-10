@@ -22,7 +22,7 @@ def main():
     # 1. Initialize conversation history to persist across loop iterations
     messages = [{"role": "user", "content": args.p}]
 
-    # 2. Define the available tools structure
+    # 2. Define the available tools (Read + Write schemas)
     tools_schema = [
         {
             "type": "function",
@@ -38,6 +38,27 @@ def main():
                         }
                     },
                     "required": ["file_path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "Write",
+                "description": "Write content to a file",
+                "parameters": {
+                    "type": "object",
+                    "required": ["file_path", "content"],
+                    "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "The path of the file to write to"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The content to write to the file"
+                        }
+                    }
                 }
             }
         }
@@ -63,29 +84,44 @@ def main():
         if assistant_message.tool_calls and len(assistant_message.tool_calls) > 0:
             for tool_call in assistant_message.tool_calls:
                 function_name = tool_call.function.name
+                arguments = json.loads(tool_call.function.arguments)
 
                 if function_name == "Read":
-                    # Parse the target file parameters
-                    arguments = json.loads(tool_call.function.arguments)
                     file_path = arguments.get("file_path")
-
-                    # Execute tool internally (Do NOT print contents to stdout now!)
                     try:
                         with open(file_path, "r", encoding="utf-8") as f:
                             tool_result = f.read()
                     except Exception as e:
                         tool_result = f"Error reading file: {str(e)}"
 
-                    # Feed the result context back into our conversation array
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": tool_result
-                    })
+                elif function_name == "Write":
+                    file_path = arguments.get("file_path")
+                    content = arguments.get("content", "")
+                    
+                    # Ensure destination directory structure exists if necessary
+                    dir_name = os.path.dirname(file_path)
+                    if dir_name and not os.path.exists(dir_name):
+                        os.makedirs(dir_name, exist_ok=True)
+                        
+                    try:
+                        # "w" mode handles both writing a new file and overwriting an existing one
+                        with open(file_path, "w", encoding="utf-8") as f:
+                            f.write(content)
+                        tool_result = "File written successfully."
+                    except Exception as e:
+                        tool_result = f"Error writing file: {str(e)}"
+                else:
+                    tool_result = f"Unknown tool: {function_name}"
+
+                # Feed the result context back into our conversation array
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": tool_result
+                })
         else:
             # 5. Break conditions: Model gave text without calling a tool
             if assistant_message.content:
-                # Use standard print or write to deliver the final compiled answer
                 sys.stdout.write(assistant_message.content)
                 sys.stdout.flush()
             break
