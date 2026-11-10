@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import sys
 
@@ -22,62 +23,57 @@ def main():
         model="anthropic/claude-haiku-4.5",
         messages=[{"role": "user", "content": args.p}],
         tools=[          
-
-         {
-  "type": "function",
-  "function": {
-    "name": "Read",
-    "description": "Read and return the contents of a file",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "file_path": {
-          "type": "string",
-          "description": "The path to the file to read"
-        }
-      },
-      "required": ["file_path"]
-    }
-  }
-}
-
+            {
+                "type": "function",
+                "function": {
+                    "name": "Read",
+                    "description": "Read and return the contents of a file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "The path to the file to read"
+                            }
+                        },
+                        "required": ["file_path"]
+                    }
+                }
+            }
         ]
     )
-
-    tools_array= {
-
-        {
-  "choices": [
-    {
-      "index": 0,
-      "message": {
-        "role": "assistant",
-        "content": null,
-        "tool_calls": [
-          {
-            "id": "call_abc123",
-            "type": "function",
-            "function": {
-              "name": "Read",
-              "arguments": "{\"file_path\": \"/path/to/file.txt\"}"
-            }
-          }
-        ]
-      },
-      "finish_reason": "tool_calls"
-    }
-  ]
-}
-    }
 
     if not chat.choices or len(chat.choices) == 0:
         raise RuntimeError("no choices in response")
 
-    # You can use print statements as follows for debugging, they'll be visible when running tests.
+    # Debug logs visible when running tests
     print("Logs from your program will appear here!", file=sys.stderr)
 
-    # TODO: Uncomment the following line to pass the first stage
-    print(chat.choices[0].message.content)
+    # 1. Grab the assistant's message object
+    message = chat.choices[0].message
+
+    # 2. Check if the model requested any tool calls
+    if message.tool_calls and len(message.tool_calls) > 0:
+        first_tool_call = message.tool_calls[0]
+        function_name = first_tool_call.function.name
+
+        # 3. Handle the "Read" tool execution
+        if function_name == "Read":
+            # Parse the arguments string (which arrives as a JSON-formatted string)
+            arguments = json.loads(first_tool_call.function.arguments)
+            file_path = arguments.get("file_path")
+
+            # Read the target file content and write it cleanly to standard output
+            with open(file_path, "r", encoding="utf-8") as f:
+                file_contents = f.read()
+            
+            # Use sys.stdout.write to ensure no extra whitespace or trailing newlines are forced
+            sys.stdout.write(file_contents)
+            sys.stdout.flush()
+    else:
+        # 4. Fallback: If no tool was called, print the standard textual response
+        if message.content:
+            print(message.content)
 
 
 if __name__ == "__main__":
