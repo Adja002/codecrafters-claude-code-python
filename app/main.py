@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
 
 from openai import OpenAI
@@ -22,7 +23,7 @@ def main():
     # 1. Initialize conversation history to persist across loop iterations
     messages = [{"role": "user", "content": args.p}]
 
-    # 2. Define the available tools (Read + Write schemas)
+    # 2. Define the available tools (Read + Write + Bash schemas)
     tools_schema = [
         {
             "type": "function",
@@ -57,6 +58,23 @@ def main():
                         "content": {
                             "type": "string",
                             "description": "The content to write to the file"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "Bash",
+                "description": "Execute a shell command",
+                "parameters": {
+                    "type": "object",
+                    "required": ["command"],
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "The command to execute"
                         }
                     }
                 }
@@ -98,18 +116,32 @@ def main():
                     file_path = arguments.get("file_path")
                     content = arguments.get("content", "")
                     
-                    # Ensure destination directory structure exists if necessary
                     dir_name = os.path.dirname(file_path)
                     if dir_name and not os.path.exists(dir_name):
                         os.makedirs(dir_name, exist_ok=True)
                         
                     try:
-                        # "w" mode handles both writing a new file and overwriting an existing one
                         with open(file_path, "w", encoding="utf-8") as f:
                             f.write(content)
                         tool_result = "File written successfully."
                     except Exception as e:
                         tool_result = f"Error writing file: {str(e)}"
+
+                elif function_name == "Bash":
+                    command = arguments.get("command")
+                    try:
+                        # Run the shell command inside the current active working directory
+                        result = subprocess.run(
+                            command,
+                            shell=True,
+                            capture_output=True,
+                            text=True,
+                            check=False
+                        )
+                        # Combine stdout and stderr outputs so the model sees all outcomes or errors
+                        tool_result = result.stdout + result.stderr
+                    except Exception as e:
+                        tool_result = f"Execution error: {str(e)}"
                 else:
                     tool_result = f"Unknown tool: {function_name}"
 
